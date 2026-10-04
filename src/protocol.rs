@@ -1,7 +1,8 @@
 //! What travels between the hook and the daemon.
 //!
 //! Two shapes live here. [`HookInput`] is what Claude Code hands the hook on
-//! stdin; [`Event`] is the much smaller thing we put on the socket.
+//! stdin; [`Event`] is the much smaller thing we put on the socket. Zeo sends a
+//! third, [`TaskOutcome`], when a background task it watches ends.
 //!
 //! The gap between them is deliberate and is the privacy boundary of this
 //! program: a hook payload can carry `last_assistant_message`, tool inputs and
@@ -93,12 +94,64 @@ pub struct Event {
     pub background: Vec<BackgroundTask>,
 }
 
+/// How a background task ended. A running task never produces a datagram, so
+/// there is no `Running` here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Outcome {
+    Completed,
+    Failed,
+    Stopped,
+    Interrupted,
+}
+
+impl Outcome {
+    /// The word a person reads, matching the wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Stopped => "stopped",
+            Self::Interrupted => "interrupted",
+        }
+    }
+}
+
+/// One background task that ended, as Zeo reports it.
+///
+/// Same privacy boundary as [`Event`]: identifiers, a path, a project label,
+/// the thread title, a type label and a duration. A task's description,
+/// summary and command line have no field here, so a sender that adds them
+/// anyway has them dropped by serde at parse time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskOutcome {
+    /// The discriminating field: neither `Event` nor `UsageReport` has it.
+    pub task_outcome: Outcome,
+    pub session_id: String,
+    pub task_id: String,
+    /// Working directory of the thread. A path, not content.
+    pub cwd: String,
+    /// Last path component of `cwd`.
+    pub project: String,
+    /// `None` for a thread that has no title yet.
+    pub thread_title: Option<String>,
+    /// `shell`, `subagent`, ...
+    pub task_type: String,
+    pub duration_ms: u64,
+}
+
 /// Everything the socket accepts. Untagged, so an `Event` datagram from a
-/// `notify` built before usage existed still parses; the two shapes share no
-/// required field, which is what keeps the match unambiguous.
+/// `notify` built before usage or tasks existed still parses.
+///
+/// serde tries the variants in order and takes the first that parses, so
+/// `Task` comes first: its required `task_outcome` is a field neither other
+/// shape has, which means it can only claim a payload that carries it — even
+/// one that also carries every field of an `Event`. Legacy `Event` and `Usage`
+/// datagrams fall through to their own variant unchanged.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum Datagram {
+    Task(TaskOutcome),
     Event(Event),
     Usage(crate::usage::UsageReport),
 }
@@ -291,4 +344,6 @@ mod tests {
         let input: HookInput = serde_json::from_str(raw).expect("parses");
         assert!(input.into_event().is_some());
     }
+
+    include!("protocol_task_tests.rs");
 }

@@ -140,7 +140,11 @@ impl Actions {
                 );
             }
             Ok(_) => {}
-            Err(error) => tracing::warn!(%error, "could not show desktop notification"),
+            Err(error) => tracing::warn!(
+                %error,
+                session = %notification.session_id,
+                "could not show desktop notification"
+            ),
         }
     }
 

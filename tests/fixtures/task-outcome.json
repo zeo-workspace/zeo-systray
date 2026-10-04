@@ -1,0 +1,10 @@
+{
+  "task_outcome": "failed",
+  "session_id": "sess-013",
+  "task_id": "task-7",
+  "cwd": "/home/user/zed-patches",
+  "project": "zed-patches",
+  "thread_title": "Bump the series",
+  "task_type": "shell",
+  "duration_ms": 20500
+}

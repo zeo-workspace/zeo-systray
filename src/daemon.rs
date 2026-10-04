@@ -70,6 +70,19 @@ pub fn run(demo: bool) -> Result<(), Box<dyn std::error::Error>> {
         };
 
         let notifications = match datagram {
+            Datagram::Task(task) => {
+                tracing::info!(
+                    outcome = task.task_outcome.as_str(),
+                    session = %task.session_id,
+                    task = %task.task_id,
+                    project = %task.project,
+                    duration_ms = task.duration_ms,
+                    "task outcome"
+                );
+                handle.update(|tray: &mut AgentTray| {
+                    tray.state.apply_task(task).into_iter().collect()
+                })
+            }
             Datagram::Event(event) => {
                 tracing::info!(
                     kind = ?event.kind,

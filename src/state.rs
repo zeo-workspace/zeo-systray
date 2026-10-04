@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use crate::protocol::{Event, EventKind};
+use crate::protocol::{Event, EventKind, Outcome, TaskOutcome};
 use crate::usage::{UsageReport, UsageTracker, now_secs, until};
 
 /// Where a single session currently stands.
@@ -236,6 +236,40 @@ impl TrayState {
         }
     }
 
+    /// Folds in a background task that ended, as Zeo reports it.
+    ///
+    /// A notification, not a session transition: the session row belongs to
+    /// the hooks, so this touches only the history. Every outcome notifies —
+    /// Zeo already decided this one was worth sending.
+    pub fn apply_task(&mut self, task: TaskOutcome) -> Option<Notification> {
+        let outcome = task.task_outcome.as_str();
+        let duration = human_duration(task.duration_ms);
+        // A thread with no title yet is named by its task type, never by a
+        // placeholder.
+        let name = task.thread_title.as_deref().unwrap_or(&task.task_type);
+        let notification = Notification {
+            summary: format!("Task {outcome} — {}", task.project),
+            body: format!("{name} · {duration}"),
+            icon: match task.task_outcome {
+                Outcome::Completed => "dialog-information",
+                Outcome::Failed => "dialog-error",
+                Outcome::Stopped | Outcome::Interrupted => "dialog-warning",
+            },
+            // Nobody is blocked on a task that already ended.
+            critical: false,
+            history_summary: format!("{} task {outcome} ({duration})", task.task_type),
+            history_label: task
+                .thread_title
+                .clone()
+                .unwrap_or_else(|| task.project.clone()),
+            session_id: task.session_id,
+            cwd: task.cwd,
+        };
+        self.record(&notification);
+        // Same rule as `apply`: muting silences the popup, never the record.
+        (!self.muted).then_some(notification)
+    }
+
     fn record(&mut self, notification: &Notification) {
         self.history.insert(
             0,
@@ -417,6 +451,22 @@ fn notification_for(event: &Event, status: SessionStatus) -> Option<Notification
             true,
         ),
         EventKind::SessionStart | EventKind::SubagentStop | EventKind::SessionEnd => None,
+    }
+}
+
+/// A task's run time as a person reads it: `20s`, `3m 05s`, `2h 13m`.
+///
+/// Not `usage::until`, which rounds to minutes: most background tasks end in
+/// seconds, and "0m" says nothing.
+fn human_duration(ms: u64) -> String {
+    let secs = ms / 1_000;
+    let (hours, minutes, seconds) = (secs / 3_600, secs % 3_600 / 60, secs % 60);
+    if hours > 0 {
+        format!("{hours}h {minutes}m")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds:02}s")
+    } else {
+        format!("{seconds}s")
     }
 }
 
@@ -619,4 +669,22 @@ mod usage_tests {
         assert!(state.apply_usage(five_hour(11.0)).is_empty());
         assert_eq!(state.history().len(), 1);
     }
+}
+
+#[cfg(test)]
+mod duration_tests {
+    use super::human_duration;
+
+    #[test]
+    fn task_durations_read_in_the_largest_useful_unit() {
+        assert_eq!(human_duration(0), "0s");
+        assert_eq!(human_duration(20_500), "20s");
+        assert_eq!(human_duration(185_000), "3m 05s");
+        assert_eq!(human_duration(7_980_000), "2h 13m");
+    }
+}
+
+#[cfg(test)]
+mod task_tests {
+    include!("state_task_tests.rs");
 }
