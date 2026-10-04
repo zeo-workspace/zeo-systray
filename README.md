@@ -195,6 +195,72 @@ Rules worth knowing:
 - A jump across several steps raises one notification, for the highest.
 - **Silence notifications** covers these too; the history still records them.
 
+## Background task outcomes
+
+Zeo watches the background tasks its agent threads start — a shell command, a
+subagent — and when one ends out of view it sends the tray a **task-outcome
+datagram**. It sends one when a task you asked it to watch ends, and for any
+task that fails, watched or not. It sends nothing when Zeo has focus and the
+task's thread is the one already on screen: you saw it end.
+
+The daemon turns that into a desktop notification:
+
+| | |
+|---|---|
+| Title | `Task <outcome> — <project>`, e.g. `Task failed — zed-patches` |
+| Body | `<thread title> · <duration>`, e.g. `Bump the series · 20s`; a thread with no title yet is named by its task type (`shell`, `subagent`, …) |
+| Click | opens that thread, through the same path as a menu row — see [Opening a thread](#opening-a-thread) |
+
+The outcome is one of `completed`, `failed`, `stopped`, `interrupted`. None of
+them is *critical*: nobody is blocked on a task that already ended.
+**Silence notifications** stops the popup; the event still lands in **Recent
+notifications**.
+
+This is the one datagram the hooks do not send — Zeo does, straight to the
+socket. Nothing has to be wired up on the tray's side, and a tray that is not
+running costs Zeo nothing: the datagram is dropped without blocking.
+
+### The datagram
+
+One JSON object, one datagram, to `$XDG_RUNTIME_DIR/zeo-systray.sock`. This is
+`tests/fixtures/task-outcome.json`:
+
+```json
+{
+  "task_outcome": "failed",
+  "session_id": "sess-013",
+  "task_id": "task-7",
+  "cwd": "/home/user/zed-patches",
+  "project": "zed-patches",
+  "thread_title": "Bump the series",
+  "task_type": "shell",
+  "duration_ms": 20500
+}
+```
+
+`task_outcome` is what tells it apart from the other two datagrams — neither a
+hook event nor a usage report has that field — so a sender that adds it can be
+read only as a task outcome. `thread_title` may be `null`. Any other field is
+ignored.
+
+### Testing it by hand
+
+With the daemon running, send the fixture from the repository root, with either
+tool:
+
+```sh
+socat -u - UNIX-SENDTO:"$XDG_RUNTIME_DIR/zeo-systray.sock" < tests/fixtures/task-outcome.json
+```
+
+```sh
+python3 -c 'import os, socket, sys; socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM).sendto(sys.stdin.buffer.read(), os.path.join(os.environ["XDG_RUNTIME_DIR"], "zeo-systray.sock"))' < tests/fixtures/task-outcome.json
+```
+
+A popup titled `Task failed — zed-patches` should appear, and the daemon logs a
+`task outcome` line with the outcome, session, task, project and duration. A
+payload it cannot parse is logged as `discarded malformed datagram` and
+dropped — that line is the first place to look when nothing shows.
+
 ## Install
 
 ```sh
@@ -247,6 +313,10 @@ personal data. **None of that is forwarded.** The datagram carries only:
   notification with no text is useless.
 
 A usage datagram carries only each window's name, percentage and reset time.
+A task-outcome datagram carries identifiers, the working directory, the project
+label, the thread title, a type label and a duration — a task's description,
+summary and command line have no field to travel in, so a sender that adds
+them anyway has them dropped at parse time.
 The status line payload also holds the working directory, the transcript path
 and the model; the `statusline` mode reads `rate_limits` and nothing else.
 
