@@ -159,7 +159,7 @@ fn free_text_sent_beside_a_task_outcome_never_reaches_the_popup_or_history() {
         state.history()[0].summary,
         state.history()[0].label
     );
-    for secret in ["DESC-do-not-leak", "SUMMARY-do-not-leak", "LEAKME", "curl"] {
-        assert!(!shown.contains(secret), "{secret} leaked into {shown:?}");
+    for needle in ["DESC-do-not-leak", "SUMMARY-do-not-leak", "LEAKME", "curl"] {
+        assert!(!shown.contains(needle), "{needle} leaked into {shown:?}");
     }
 }
