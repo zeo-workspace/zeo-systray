@@ -40,6 +40,11 @@ const DEFAULT_LINK: &str = "zed://agent?session={session}&cwd={cwd_query}";
 /// what makes one link work in both editors.
 const EDITOR_CLIS: [&str; 3] = ["zeo", "zedit", "zedit-bin"];
 
+/// Whether `ZEO_SYSTRAY_OPEN_CMD` replaces the default link.
+pub fn custom_opener() -> bool {
+    std::env::var_os(OPEN_CMD_ENV).is_some_and(|value| !value.is_empty())
+}
+
 /// The command used when `ZEO_SYSTRAY_OPEN_CMD` is unset: the first editor
 /// CLI on `PATH`, else `xdg-open`.
 fn default_open_cmd() -> String {

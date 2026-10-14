@@ -17,6 +17,20 @@ use serde::{Deserialize, Serialize};
 /// Socket file name under `$XDG_RUNTIME_DIR`.
 pub const SOCKET_NAME: &str = "zeo-systray.sock";
 
+/// Set to `1` by Zeo in the environment of every agent server it starts, and
+/// inherited from there by Claude Code and its hooks. The hook fires for every
+/// Claude Code process on the machine -- a terminal, an editor plugin, a
+/// script -- and only a session Zeo started has a thread Zeo can open.
+pub const ZEO_THREAD_ENV: &str = "ZEO_THREAD";
+
+/// The [`Event::client`] of a session Zeo started.
+pub const ZEO_CLIENT: &str = "zeo";
+
+/// The client a hook's environment marker names, if any.
+pub fn client_from_marker(marker: Option<&str>) -> Option<String> {
+    (marker == Some("1")).then(|| ZEO_CLIENT.to_string())
+}
+
 /// Path of the datagram socket the daemon listens on.
 ///
 /// `$XDG_RUNTIME_DIR` is per-user and already mode 0700, which is why the
@@ -92,6 +106,11 @@ pub struct Event {
     pub message: Option<String>,
     /// Background work still running when the turn ended.
     pub background: Vec<BackgroundTask>,
+    /// Which program started the session: [`ZEO_CLIENT`], or `None` when
+    /// nothing claimed it. Optional on the wire both ways, so a `notify` and a
+    /// daemon from either side of the field still understand each other.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client: Option<String>,
 }
 
 /// How a background task ended. A running task never produces a datagram, so
@@ -230,6 +249,9 @@ impl HookInput {
                     status: task.status,
                 })
                 .collect(),
+            // The payload cannot say who started the session; the caller
+            // reads that from the environment the hook inherited.
+            client: None,
         })
     }
 }
@@ -343,6 +365,56 @@ mod tests {
                       "some_field_invented_next_year": {"nested": true}}"#;
         let input: HookInput = serde_json::from_str(raw).expect("parses");
         assert!(input.into_event().is_some());
+    }
+
+    /// Story 050: only the exact marker Zeo sets names the client. Anything
+    /// else -- unset, `0`, empty -- leaves the session unclaimed.
+    #[test]
+    fn the_zeo_thread_marker_names_the_client() {
+        assert_eq!(client_from_marker(Some("1")).as_deref(), Some(ZEO_CLIENT));
+        assert_eq!(client_from_marker(None), None);
+        assert_eq!(client_from_marker(Some("0")), None);
+        assert_eq!(client_from_marker(Some("")), None);
+    }
+
+    /// A `notify` built before story 050 sends no `client`, and a session
+    /// nobody claimed sends none either: the field is left off the wire, and
+    /// a datagram without it still parses.
+    #[test]
+    fn an_event_without_a_client_omits_the_field_and_still_parses() {
+        let raw = r#"{"hook_event_name":"Stop","session_id":"s","cwd":"/tmp/p"}"#;
+        let event = serde_json::from_str::<HookInput>(raw)
+            .expect("parses")
+            .into_event()
+            .expect("Stop is forwarded");
+        assert_eq!(event.client, None);
+        let wire = serde_json::to_string(&event).expect("event serialises");
+        assert!(!wire.contains("client"), "wire: {wire}");
+
+        let legacy = r#"{"kind":"Stop","session_id":"s","cwd":"/p","project":"p",
+                         "title":null,"agent_type":null,"message":null,"background":[]}"#;
+        let Ok(Datagram::Event(parsed)) = serde_json::from_str::<Datagram>(legacy) else {
+            panic!("a legacy event datagram must still parse as an event");
+        };
+        assert_eq!(parsed.client, None);
+    }
+
+    /// A Zeo session's datagram carries its client and survives the round trip.
+    #[test]
+    fn a_zeo_event_carries_its_client_on_the_wire() {
+        let raw = r#"{"hook_event_name":"Stop","session_id":"s","cwd":"/tmp/p"}"#;
+        let mut event = serde_json::from_str::<HookInput>(raw)
+            .expect("parses")
+            .into_event()
+            .expect("Stop is forwarded");
+        event.client = client_from_marker(Some("1"));
+        let wire = serde_json::to_string(&event).expect("event serialises");
+        assert!(wire.contains(r#""client":"zeo""#), "wire: {wire}");
+
+        let Ok(Datagram::Event(parsed)) = serde_json::from_str::<Datagram>(&wire) else {
+            panic!("a Zeo event datagram must parse as an event");
+        };
+        assert_eq!(parsed.client.as_deref(), Some(ZEO_CLIENT));
     }
 
     include!("protocol_task_tests.rs");

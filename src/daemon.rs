@@ -37,6 +37,14 @@ pub fn run(demo: bool) -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(path = %path.display(), "listening");
 
     let mut state = TrayState::default();
+    state.zeo_only =
+        crate::state::zeo_only_from_env(std::env::var(crate::state::ZEO_ONLY_ENV).ok().as_deref());
+    state.open_any = crate::open::custom_opener();
+    tracing::info!(
+        zeo_only = state.zeo_only,
+        open_any = state.open_any,
+        "notification filter"
+    );
     if demo {
         seed_demo(&mut state);
         tracing::info!("demo state seeded");
@@ -89,6 +97,7 @@ pub fn run(demo: bool) -> Result<(), Box<dyn std::error::Error>> {
                     session = %event.session_id,
                     project = %event.project,
                     background = event.background.len(),
+                    client = event.client.as_deref().unwrap_or("-"),
                     "event"
                 );
                 handle.update(|tray: &mut AgentTray| tray.state.apply(event).into_iter().collect())
@@ -165,6 +174,7 @@ fn seed_demo(state: &mut TrayState) {
             agent_type: None,
             message: None,
             background,
+            client: Some(crate::protocol::ZEO_CLIENT.into()),
         });
     }
 }

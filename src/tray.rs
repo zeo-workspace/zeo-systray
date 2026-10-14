@@ -118,6 +118,8 @@ impl ksni::Tray for AgentTray {
                 items.push(
                     StandardItem {
                         label: session.menu_label(),
+                        // A session Zeo did not start has no thread to open.
+                        enabled: session.openable,
                         activate: Box::new(move |_: &mut Self| open::session(&session_id, &cwd)),
                         ..Default::default()
                     }
@@ -155,8 +157,9 @@ impl ksni::Tray for AgentTray {
                     let cwd = entry.cwd.clone();
                     StandardItem {
                         label: entry.menu_label(now),
-                        // A usage entry has no thread behind it.
-                        enabled: !session_id.is_empty(),
+                        // A usage entry has no thread behind it, and neither does
+                        // a session Zeo did not start.
+                        enabled: entry.openable && !session_id.is_empty(),
                         activate: Box::new(move |_: &mut Self| open::session(&session_id, &cwd)),
                         ..Default::default()
                     }

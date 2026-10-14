@@ -16,6 +16,21 @@ in `zed-patches`, and it needs this daemon at 0.3.0 or later.
 
 ## [Unreleased]
 
+### Added
+
+- `ZEO_SYSTRAY_ZEO_ONLY=1` silences popups for sessions Zeo did not start,
+  keeping them in the history.
+- The daemon's `event` log line carries `client`.
+
+### Changed
+
+- **Open thread** is offered only for sessions Zeo started. The hook fires for
+  every Claude Code process on the machine, and clicking a session Zeo never
+  owned opened Zeo on a *no thread found* error. Zeo marks its agents with
+  `ZEO_THREAD=1`, `notify` forwards it as `"client":"zeo"`, and every other
+  session still notifies, with a disabled row and no button. A custom
+  `ZEO_SYSTRAY_OPEN_CMD` keeps every row clickable (story 050).
+
 ## [0.3.0] — 2026-10-04
 
 Zeo can now tell the tray when one of its agent's background tasks ends out of

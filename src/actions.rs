@@ -126,7 +126,7 @@ impl Actions {
     /// 2026-10-01: 0.2.1 dropped `notify-rust`'s handle, and with it the
     /// connection, right after showing, and "Open thread" vanished.
     pub fn show(&self, notification: &Notification) {
-        let has_thread = !notification.session_id.is_empty();
+        let has_thread = notification.openable && !notification.session_id.is_empty();
         match futures_lite::future::block_on(self.notify(notification, has_thread)) {
             Ok((id, server)) if has_thread => {
                 tracing::debug!(id, server = %server, session = %notification.session_id, "notification registered");

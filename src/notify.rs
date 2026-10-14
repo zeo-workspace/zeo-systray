@@ -13,7 +13,7 @@
 use std::io::Read;
 use std::os::unix::net::UnixDatagram;
 
-use crate::protocol::{Event, HookInput, socket_path};
+use crate::protocol::{Event, HookInput, ZEO_THREAD_ENV, client_from_marker, socket_path};
 
 /// Cap on the hook payload we will read. `last_assistant_message` can be
 /// large and we throw it away anyway; this bounds the work before parsing.
@@ -40,10 +40,11 @@ pub fn run() {
     };
 
     let hook_event = input.hook_event_name.clone();
-    let Some(event) = input.into_event() else {
+    let Some(mut event) = input.into_event() else {
         tracing::debug!(hook_event, "event not forwarded");
         return;
     };
+    event.client = client_from_marker(std::env::var(ZEO_THREAD_ENV).ok().as_deref());
 
     if let Err(error) = send(&event) {
         // The overwhelmingly common cause is "the daemon is not running",

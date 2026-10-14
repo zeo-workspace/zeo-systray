@@ -60,6 +60,7 @@ once at startup:
 | `ZEO_SYSTRAY_ICON` | any icon name in your theme, e.g. `dev.zed.Zed-Nightly` |
 | `ZEO_SYSTRAY_ICON_PATH` | extra directory searched for icons — lets the daemon run from a build tree before anything is installed |
 | `ZEO_SYSTRAY_OPEN_CMD` | what a menu row runs; `{session}` and `{cwd}` are substituted |
+| `ZEO_SYSTRAY_ZEO_ONLY` | `1` silences popups for sessions Zeo did not start; they still reach the history |
 
 When the bundled icon is in use and none of these is set, the daemon points the
 host at `/usr/share/icons/hicolor/scalable/apps` itself. That looks redundant
@@ -111,6 +112,30 @@ The thread opens in the window holding its project, whichever virtual desktop
 that window is on — not in the window that happened to have focus when the
 notification was clicked. Zed finds the project from its own record of the
 thread; `cwd` is only consulted for a thread it has no record of yet.
+
+### Which sessions can be opened
+
+The hook in `settings.json` fires for **every** Claude Code process on the
+machine — a terminal, an editor plugin, a script running `claude -p` — not only
+for Zeo's threads. Only a session Zeo started has a thread Zeo can open; the
+link for any other one opens Zeo on a *no thread found* error.
+
+So the tray tells them apart. Zeo starts every agent with `ZEO_THREAD=1` in its
+environment; Claude Code and its hooks inherit it, and `notify` forwards it as
+`"client":"zeo"`. Every session still notifies, but only a Zeo session gets the
+**Open thread** button and a clickable row. Any other session's row is shown
+disabled. Once a session has been seen with the marker it stays Zeo's.
+
+With a custom `ZEO_SYSTRAY_OPEN_CMD` (below) every row stays clickable: only the
+default link needs a Zeo thread behind it.
+
+To silence the popups of those other sessions altogether, start the daemon with
+`ZEO_SYSTRAY_ZEO_ONLY=1`. They still land in **Recent notifications**.
+
+The marker needs a Zeo that sets it (the `zed-patches` series, story 050). With
+an older Zeo, or with plain Zed, no session carries it.
+
+### A custom opener
 
 `ZEO_SYSTRAY_OPEN_CMD` replaces the command; `{session}`, `{cwd}` and
 `{cwd_query}` — the directory percent-encoded for a URL query — are
@@ -310,7 +335,9 @@ personal data. **None of that is forwarded.** The datagram carries only:
 - counters and type labels for background tasks (`shell`, `subagent`, …) —
   never the command itself,
 - on `Notification` only, the display text Claude itself wrote, because a
-  notification with no text is useless.
+  notification with no text is useless,
+- `client: "zeo"` when the session was started by Zeo — a label read from the
+  hook's environment, never the environment itself.
 
 A usage datagram carries only each window's name, percentage and reset time.
 A task-outcome datagram carries identifiers, the working directory, the project

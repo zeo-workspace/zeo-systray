@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use crate::protocol::{Event, EventKind, Outcome, TaskOutcome};
+use crate::protocol::{Event, EventKind, Outcome, TaskOutcome, ZEO_CLIENT};
 use crate::usage::{UsageReport, UsageTracker, now_secs, until};
 
 /// Where a single session currently stands.
@@ -62,6 +62,11 @@ pub struct Session {
     pub status: SessionStatus,
     /// Labels of background tasks still in flight, e.g. `shell`, `subagent`.
     pub background: Vec<String>,
+    /// Whether Zeo started this session, and so has a thread for it.
+    pub zeo: bool,
+    /// Whether a click on the row opens anything: a Zeo session, or any
+    /// session under a custom opener.
+    pub openable: bool,
 }
 
 impl Session {
@@ -94,6 +99,8 @@ pub struct HistoryEntry {
     /// no thread to open.
     pub session_id: String,
     pub cwd: String,
+    /// Copied from the notification it records.
+    pub openable: bool,
 }
 
 impl HistoryEntry {
@@ -119,6 +126,14 @@ impl HistoryEntry {
     }
 }
 
+/// Set to `1` to silence popups for sessions Zeo did not start.
+pub const ZEO_ONLY_ENV: &str = "ZEO_SYSTRAY_ZEO_ONLY";
+
+/// Whether [`ZEO_ONLY_ENV`]'s value turns [`TrayState::zeo_only`] on.
+pub fn zeo_only_from_env(value: Option<&str>) -> bool {
+    value == Some("1")
+}
+
 /// How many events the history keeps. Enough to cover a working stretch,
 /// short enough that the submenu stays readable without scrolling.
 const HISTORY_LIMIT: usize = 20;
@@ -135,6 +150,15 @@ pub struct TrayState {
     /// live. The escape hatch for a busy afternoon, so the answer to "too many
     /// popups" is not uninstalling.
     pub muted: bool,
+    /// Suppresses popups for sessions Zeo did not start -- a terminal, an
+    /// editor plugin, a script -- while keeping them in the history. Read from
+    /// [`ZEO_ONLY_ENV`] at startup; off by default, so every session notifies.
+    pub zeo_only: bool,
+    /// Makes every session openable: set when `ZEO_SYSTRAY_OPEN_CMD` replaces
+    /// the default link. Only the default link needs a Zeo thread behind it; a
+    /// custom opener -- `xdg-open {cwd}`, another editor -- works for any
+    /// session, and taking its rows away would break it.
+    pub open_any: bool,
     /// Plan usage windows. Account-wide, so they live beside the sessions
     /// rather than in any one of them.
     usage: UsageTracker,
@@ -167,6 +191,16 @@ impl TrayState {
             .map(|task| task.kind.clone())
             .collect();
 
+        // Sticky: once any event of a session carried Zeo's marker, the session
+        // is Zeo's. Every event of one Claude Code process inherits the same
+        // environment, so a later unmarked event is not evidence otherwise.
+        let zeo = event.client.as_deref() == Some(ZEO_CLIENT)
+            || self
+                .sessions
+                .get(&event.session_id)
+                .is_some_and(|session| session.zeo);
+        let openable = zeo || self.open_any;
+
         let session = Session {
             session_id: event.session_id.clone(),
             project: event.project.clone(),
@@ -174,6 +208,8 @@ impl TrayState {
             title: event.title.clone(),
             status,
             background,
+            zeo,
+            openable,
         };
 
         if self
@@ -184,13 +220,13 @@ impl TrayState {
             self.order.push(event.session_id.clone());
         }
 
-        let notification = notification_for(&event, status);
+        let notification = notification_for(&event, status, openable);
         if let Some(notification) = notification.as_ref() {
             self.record(notification);
         }
         // Muting silences the popup, never the record: the history is how you
         // find out what you missed while it was off.
-        notification.filter(|_| !self.muted)
+        notification.filter(|_| !self.muted && (zeo || !self.zeo_only))
     }
 
     /// Folds a usage report in. Returns one notification per step crossed —
@@ -222,6 +258,7 @@ impl TrayState {
                     summary,
                     session_id: String::new(),
                     cwd: String::new(),
+                    openable: false,
                 }
             })
             .collect();
@@ -264,6 +301,8 @@ impl TrayState {
                 .unwrap_or_else(|| task.project.clone()),
             session_id: task.session_id,
             cwd: task.cwd,
+            // Zeo sends task outcomes itself, so the thread is always its own.
+            openable: true,
         };
         self.record(&notification);
         // Same rule as `apply`: muting silences the popup, never the record.
@@ -279,6 +318,7 @@ impl TrayState {
                 summary: notification.history_summary.clone(),
                 session_id: notification.session_id.clone(),
                 cwd: notification.cwd.clone(),
+                openable: notification.openable,
             },
         );
         self.history.truncate(HISTORY_LIMIT);
@@ -394,6 +434,9 @@ pub struct Notification {
     /// account, not a session.
     pub session_id: String,
     pub cwd: String,
+    /// Whether the popup offers to open the session in Zeo. False for a session
+    /// Zeo did not start: Zeo has no thread for it, and opening one fails.
+    pub openable: bool,
 }
 
 /// Decides whether a transition deserves a desktop notification.
@@ -401,7 +444,7 @@ pub struct Notification {
 /// Deliberately quiet: a session merely starting or a subagent finishing is
 /// not worth interrupting anyone. Notifying on every event is how a tray
 /// becomes the thing people mute.
-fn notification_for(event: &Event, status: SessionStatus) -> Option<Notification> {
+fn notification_for(event: &Event, status: SessionStatus, openable: bool) -> Option<Notification> {
     let label = event.title.as_deref().unwrap_or(&event.project);
     let build = |summary: String, body: &str, history: &str, critical: bool| {
         Some(Notification {
@@ -413,6 +456,7 @@ fn notification_for(event: &Event, status: SessionStatus) -> Option<Notification
             history_label: label.to_string(),
             session_id: event.session_id.clone(),
             cwd: event.cwd.clone(),
+            openable,
         })
     };
 
@@ -492,6 +536,7 @@ pub(crate) mod tests_support {
                     status: "running".into(),
                 })
                 .collect(),
+            client: None,
         }
     }
 }

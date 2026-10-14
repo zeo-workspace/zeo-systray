@@ -163,3 +163,122 @@ fn free_text_sent_beside_a_task_outcome_never_reaches_the_popup_or_history() {
         assert!(!shown.contains(needle), "{needle} leaked into {shown:?}");
     }
 }
+
+// ---- Story 050: Open only for sessions Zeo owns -----------------------------------
+
+fn claimed(kind: EventKind, session: &str, client: Option<&str>) -> crate::protocol::Event {
+    let mut event = super::tests_support::event(kind, session, vec![]);
+    event.client = client.map(str::to_owned);
+    event
+}
+
+#[test]
+fn a_zeo_session_is_openable_everywhere() {
+    let mut state = TrayState::default();
+    let notification = state
+        .apply(claimed(EventKind::Stop, "z", Some("zeo")))
+        .expect("Stop notifies");
+    assert!(notification.openable, "the popup offers Open");
+    assert!(state.history()[0].openable, "the history row opens it");
+    assert!(
+        state.sessions().all(|session| session.openable),
+        "the session row opens it"
+    );
+}
+
+#[test]
+fn a_session_nobody_claimed_still_notifies_but_cannot_be_opened() {
+    let mut state = TrayState::default();
+    let notification = state
+        .apply(claimed(EventKind::Stop, "cli", None))
+        .expect("an unclaimed session still notifies");
+    assert!(!notification.openable, "no Open on the popup");
+    assert!(!state.history()[0].openable, "the history row is disabled");
+    assert!(
+        state.sessions().all(|session| !session.openable),
+        "the session row is disabled"
+    );
+}
+
+#[test]
+fn an_unknown_client_is_not_zeo() {
+    let mut state = TrayState::default();
+    let notification = state
+        .apply(claimed(EventKind::Stop, "vscode", Some("vscode")))
+        .expect("Stop notifies");
+    assert!(!notification.openable);
+}
+
+#[test]
+fn ownership_survives_a_later_unmarked_event() {
+    let mut state = TrayState::default();
+    state.apply(claimed(EventKind::SessionStart, "z", Some("zeo")));
+    let notification = state
+        .apply(claimed(EventKind::Stop, "z", None))
+        .expect("Stop notifies");
+    assert!(notification.openable, "a claimed session stays claimed");
+}
+
+#[test]
+fn a_task_outcome_is_zeos_by_construction() {
+    let mut state = TrayState::default();
+    let notification = state
+        .apply_task(task_outcome("failed", "s1", "t1", None))
+        .expect("a task outcome notifies");
+    assert!(notification.openable);
+    assert!(state.history()[0].openable);
+}
+
+#[test]
+fn zeo_only_silences_unclaimed_sessions_but_keeps_the_record() {
+    let mut state = TrayState {
+        zeo_only: true,
+        ..Default::default()
+    };
+    assert!(
+        state.apply(claimed(EventKind::Stop, "cli", None)).is_none(),
+        "no popup for a session Zeo did not start"
+    );
+    assert_eq!(state.history().len(), 1, "the history still records it");
+    assert!(
+        state
+            .apply(claimed(EventKind::Stop, "z", Some("zeo")))
+            .is_some(),
+        "Zeo's own sessions still notify"
+    );
+}
+
+#[test]
+fn zeo_only_is_read_from_its_environment_variable() {
+    assert!(zeo_only_from_env(Some("1")));
+    assert!(!zeo_only_from_env(None));
+    assert!(!zeo_only_from_env(Some("0")));
+}
+
+// A custom opener (`ZEO_SYSTRAY_OPEN_CMD`, e.g. `xdg-open {cwd}`) does not need a
+// Zeo thread, so it keeps every session clickable -- but `zeo_only` still asks
+// who started the session, not what a click would run.
+#[test]
+fn a_custom_opener_keeps_every_session_openable() {
+    let mut state = TrayState {
+        open_any: true,
+        ..Default::default()
+    };
+    let notification = state
+        .apply(claimed(EventKind::Stop, "cli", None))
+        .expect("Stop notifies");
+    assert!(notification.openable);
+    assert!(state.sessions().all(|session| session.openable));
+
+    let mut silenced = TrayState {
+        open_any: true,
+        zeo_only: true,
+        ..Default::default()
+    };
+    assert!(
+        silenced
+            .apply(claimed(EventKind::Stop, "cli", None))
+            .is_none(),
+        "zeo_only still silences a session Zeo did not start"
+    );
+}
