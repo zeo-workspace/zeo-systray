@@ -164,14 +164,8 @@ impl Actions {
         } else {
             &[]
         };
-        // Critical is not dismissed on a timer by the desktop, which is the
-        // point: the agent is stopped until someone acts. 0 means never
-        // expire, -1 the server's default.
-        let (urgency, timeout): (u8, i32) = if notification.critical && has_thread {
-            (2, 0)
-        } else {
-            (1, -1)
-        };
+        let (urgency, timeout) =
+            urgency_and_timeout(notification.critical, !notification.session_id.is_empty());
         let hints = HashMap::from([("urgency", Value::from(urgency))]);
 
         let reply = self
@@ -282,6 +276,21 @@ impl Actions {
     }
 }
 
+/// Urgency hint and expiry for a popup.
+///
+/// Critical is not dismissed on a timer by the desktop, which is the point: the
+/// agent is stopped until someone acts. 0 means never expire, -1 the server's
+/// default. Decided by whether the popup names a session, never by whether it
+/// can open one: a session Zeo did not start has no Open button, and its agent
+/// is just as stuck waiting on a permission.
+fn urgency_and_timeout(critical: bool, names_session: bool) -> (u8, i32) {
+    if critical && names_session {
+        (2, 0)
+    } else {
+        (1, -1)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,5 +338,15 @@ mod tests {
 
         assert_eq!(registry.action(":1.10", 2, "dismiss"), None);
         assert!(registry.pending.is_empty());
+    }
+
+    /// Story 050, audit finding: a blocked agent's popup must stay up whoever
+    /// started the session. Whether it carries an Open button is a separate
+    /// question -- a terminal `claude` waiting on a permission is just as stuck.
+    #[test]
+    fn a_critical_popup_stays_up_without_an_open_action() {
+        assert_eq!(urgency_and_timeout(true, true), (2, 0));
+        assert_eq!(urgency_and_timeout(true, false), (1, -1));
+        assert_eq!(urgency_and_timeout(false, true), (1, -1));
     }
 }
