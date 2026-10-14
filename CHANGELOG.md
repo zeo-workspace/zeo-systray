@@ -29,7 +29,8 @@ in `zed-patches`, and it needs this daemon at 0.3.0 or later.
   owned opened Zeo on a *no thread found* error. Zeo marks its agents with
   `ZEO_THREAD=1`, `notify` forwards it as `"client":"zeo"`, and every other
   session still notifies, with a disabled row and no button. A custom
-  `ZEO_SYSTRAY_OPEN_CMD` keeps every row clickable (story 050).
+  `ZEO_SYSTRAY_OPEN_CMD` that never uses `{session}` (e.g. `xdg-open {cwd}`)
+  keeps every row clickable (story 050).
 
 ## [0.3.0] — 2026-10-04
 

@@ -154,10 +154,10 @@ pub struct TrayState {
     /// editor plugin, a script -- while keeping them in the history. Read from
     /// [`ZEO_ONLY_ENV`] at startup; off by default, so every session notifies.
     pub zeo_only: bool,
-    /// Makes every session openable: set when `ZEO_SYSTRAY_OPEN_CMD` replaces
-    /// the default link. Only the default link needs a Zeo thread behind it; a
-    /// custom opener -- `xdg-open {cwd}`, another editor -- works for any
-    /// session, and taking its rows away would break it.
+    /// Makes every session openable: set when `ZEO_SYSTRAY_OPEN_CMD` is an
+    /// opener that never takes `{session}`. Such an opener -- `xdg-open {cwd}`,
+    /// another editor -- works for any session, and taking its rows away would
+    /// break it; one that takes `{session}` still needs a Zeo thread.
     pub open_any: bool,
     /// Plan usage windows. Account-wide, so they live beside the sessions
     /// rather than in any one of them.

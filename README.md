@@ -126,8 +126,10 @@ environment; Claude Code and its hooks inherit it, and `notify` forwards it as
 **Open thread** button and a clickable row. Any other session's row is shown
 disabled. Once a session has been seen with the marker it stays Zeo's.
 
-With a custom `ZEO_SYSTRAY_OPEN_CMD` (below) every row stays clickable: only the
-default link needs a Zeo thread behind it.
+With a custom `ZEO_SYSTRAY_OPEN_CMD` (below) that never uses `{session}` — such as
+`xdg-open {cwd}` — every row stays clickable, because it does not need a Zeo thread
+behind it. One that does use `{session}`, like the KDE raise script, follows the
+same rule as the default link.
 
 To silence the popups of those other sessions altogether, start the daemon with
 `ZEO_SYSTRAY_ZEO_ONLY=1`. They still land in **Recent notifications**.

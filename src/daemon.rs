@@ -39,7 +39,7 @@ pub fn run(demo: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut state = TrayState::default();
     state.zeo_only =
         crate::state::zeo_only_from_env(std::env::var(crate::state::ZEO_ONLY_ENV).ok().as_deref());
-    state.open_any = crate::open::custom_opener();
+    state.open_any = crate::open::opens_any_session(crate::open::open_cmd_template().as_deref());
     tracing::info!(
         zeo_only = state.zeo_only,
         open_any = state.open_any,

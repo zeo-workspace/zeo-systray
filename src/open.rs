@@ -40,9 +40,19 @@ const DEFAULT_LINK: &str = "zed://agent?session={session}&cwd={cwd_query}";
 /// what makes one link work in both editors.
 const EDITOR_CLIS: [&str; 3] = ["zeo", "zedit", "zedit-bin"];
 
-/// Whether `ZEO_SYSTRAY_OPEN_CMD` replaces the default link.
-pub fn custom_opener() -> bool {
-    std::env::var_os(OPEN_CMD_ENV).is_some_and(|value| !value.is_empty())
+/// The `ZEO_SYSTRAY_OPEN_CMD` template, when one is set.
+pub fn open_cmd_template() -> Option<String> {
+    std::env::var(OPEN_CMD_ENV).ok()
+}
+
+/// Whether an opener template works for any session, Zeo's or not.
+///
+/// Only one that never takes `{session}`: an opener that does -- the default
+/// link, or the KDE raise script this package ships -- opens a Zeo thread by
+/// its id, and a session Zeo did not start has none. One that takes only the
+/// directory (`xdg-open {cwd}`, another editor) works for every session.
+pub fn opens_any_session(template: Option<&str>) -> bool {
+    template.is_some_and(|template| !template.trim().is_empty() && !template.contains("{session}"))
 }
 
 /// The command used when `ZEO_SYSTRAY_OPEN_CMD` is unset: the first editor
@@ -161,7 +171,20 @@ fn escape_sandbox(
 
 #[cfg(test)]
 mod tests {
-    use super::{escape_sandbox, query_encode};
+    use super::{escape_sandbox, opens_any_session, query_encode};
+
+    /// Story 050, round 2: an opener that still takes `{session}` -- the KDE
+    /// raise script this package ships -- opens a Zeo thread and needs one
+    /// behind it; only an opener that never names the session opens any row.
+    #[test]
+    fn only_an_opener_without_session_opens_any_row() {
+        let kde = "/usr/share/zeo-systray/zeo-systray-open-kde.sh {session} {cwd}";
+        assert!(!opens_any_session(Some(kde)));
+        assert!(opens_any_session(Some("xdg-open {cwd}")));
+        assert!(!opens_any_session(None));
+        assert!(!opens_any_session(Some("")));
+        assert!(!opens_any_session(Some("   ")));
+    }
 
     #[test]
     fn outside_systemd_the_opener_runs_as_given() {
