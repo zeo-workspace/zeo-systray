@@ -21,6 +21,8 @@ in `zed-patches`, and it needs this daemon at 0.3.0 or later.
 - `ZEO_SYSTRAY_ZEO_ONLY=1` silences popups for sessions Zeo did not start,
   keeping them in the history.
 - The daemon's `event` log line carries `client`.
+- A session Zeo did not start says so: its popup ends with "Outside Zeo — no
+  thread to open." and its menu and history rows with "(outside Zeo)".
 
 ### Changed
 

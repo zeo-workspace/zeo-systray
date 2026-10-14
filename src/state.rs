@@ -73,7 +73,7 @@ impl Session {
     /// One menu line: what the user reads to tell sessions apart.
     pub fn menu_label(&self) -> String {
         let head = self.title.as_deref().unwrap_or(&self.project);
-        if self.background.is_empty() {
+        let label = if self.background.is_empty() {
             format!("{head} — {}", self.status.label())
         } else {
             format!(
@@ -81,6 +81,11 @@ impl Session {
                 self.status.label(),
                 self.background.join(", ")
             )
+        };
+        if self.zeo {
+            label
+        } else {
+            format!("{label} {OUTSIDE_ZEO_SUFFIX}")
         }
     }
 }
@@ -125,6 +130,10 @@ impl HistoryEntry {
         format!("{} — {} ({ago})", self.label, self.summary)
     }
 }
+
+/// Appended to the rows of a session Zeo did not start. Without it the row is
+/// merely disabled, and nothing says why.
+const OUTSIDE_ZEO_SUFFIX: &str = "(outside Zeo)";
 
 /// Set to `1` to silence popups for sessions Zeo did not start.
 pub const ZEO_ONLY_ENV: &str = "ZEO_SYSTRAY_ZEO_ONLY";
@@ -220,7 +229,7 @@ impl TrayState {
             self.order.push(event.session_id.clone());
         }
 
-        let notification = notification_for(&event, status, openable);
+        let notification = notification_for(&event, status, zeo, openable);
         if let Some(notification) = notification.as_ref() {
             self.record(notification);
         }
@@ -444,16 +453,35 @@ pub struct Notification {
 /// Deliberately quiet: a session merely starting or a subagent finishing is
 /// not worth interrupting anyone. Notifying on every event is how a tray
 /// becomes the thing people mute.
-fn notification_for(event: &Event, status: SessionStatus, openable: bool) -> Option<Notification> {
+fn notification_for(
+    event: &Event,
+    status: SessionStatus,
+    zeo: bool,
+    openable: bool,
+) -> Option<Notification> {
     let label = event.title.as_deref().unwrap_or(&event.project);
+    // A session Zeo did not start says so, rather than only lacking the Open
+    // button: a terminal `claude`, an editor plugin and a script look the same
+    // otherwise.
+    let (outside_body, outside_label) = match (zeo, openable) {
+        (true, _) => (String::new(), String::new()),
+        (false, true) => (
+            " Outside Zeo.".to_string(),
+            format!(" {OUTSIDE_ZEO_SUFFIX}"),
+        ),
+        (false, false) => (
+            " Outside Zeo — no thread to open.".to_string(),
+            format!(" {OUTSIDE_ZEO_SUFFIX}"),
+        ),
+    };
     let build = |summary: String, body: &str, history: &str, critical: bool| {
         Some(Notification {
             summary,
-            body: body.to_string(),
+            body: format!("{body}{outside_body}"),
             icon: status.icon_name(),
             critical,
             history_summary: history.to_string(),
-            history_label: label.to_string(),
+            history_label: format!("{label}{outside_label}"),
             session_id: event.session_id.clone(),
             cwd: event.cwd.clone(),
             openable,

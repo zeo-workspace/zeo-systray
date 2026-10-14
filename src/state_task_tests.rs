@@ -282,3 +282,55 @@ fn a_custom_opener_keeps_every_session_openable() {
         "zeo_only still silences a session Zeo did not start"
     );
 }
+
+// ---- Story 050, round 3: say when a session was started outside Zeo -------------
+
+#[test]
+fn an_unclaimed_session_says_it_is_outside_zeo() {
+    let mut state = TrayState::default();
+    let notification = state
+        .apply(claimed(EventKind::Stop, "cli", None))
+        .expect("Stop notifies");
+    assert!(
+        notification.body.ends_with("Outside Zeo — no thread to open."),
+        "body was {:?}",
+        notification.body
+    );
+    assert!(state.history()[0].label.ends_with("(outside Zeo)"));
+    assert!(
+        state
+            .sessions()
+            .all(|session| session.menu_label().ends_with("(outside Zeo)"))
+    );
+}
+
+#[test]
+fn a_zeo_session_is_not_labelled_outside() {
+    let mut state = TrayState::default();
+    let notification = state
+        .apply(claimed(EventKind::Stop, "z", Some("zeo")))
+        .expect("Stop notifies");
+    assert!(!notification.body.contains("Outside Zeo"));
+    assert!(!state.history()[0].label.contains("outside Zeo"));
+    assert!(
+        state
+            .sessions()
+            .all(|session| !session.menu_label().contains("outside Zeo"))
+    );
+}
+
+#[test]
+fn a_custom_opener_still_says_outside_zeo_but_not_that_nothing_opens() {
+    let mut state = TrayState {
+        open_any: true,
+        ..Default::default()
+    };
+    let notification = state
+        .apply(claimed(EventKind::Stop, "cli", None))
+        .expect("Stop notifies");
+    assert!(
+        notification.body.ends_with("Outside Zeo."),
+        "body was {:?}",
+        notification.body
+    );
+}
