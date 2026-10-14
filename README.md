@@ -125,7 +125,9 @@ environment; Claude Code and its hooks inherit it, and `notify` forwards it as
 `"client":"zeo"`. Every session still notifies, but only a Zeo session gets the
 **Open thread** button and a clickable row. Any other session says so: its popup
 ends with *Outside Zeo — no thread to open.*, and its rows in the menu and in
-**Recent notifications** end with *(outside Zeo)* and are shown disabled. Once a
+**Recent notifications** end with *(outside Zeo)* and are shown disabled (under a
+custom opener without `{session}`, below, they stay clickable and the popup says
+just *Outside Zeo.*). Once a
 session has been seen with the marker it stays Zeo's.
 
 With a custom `ZEO_SYSTRAY_OPEN_CMD` (below) that never uses `{session}` — such as

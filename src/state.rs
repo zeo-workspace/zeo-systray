@@ -443,8 +443,9 @@ pub struct Notification {
     /// account, not a session.
     pub session_id: String,
     pub cwd: String,
-    /// Whether the popup offers to open the session in Zeo. False for a session
-    /// Zeo did not start: Zeo has no thread for it, and opening one fails.
+    /// Whether the popup offers to open the session. False for a session Zeo did
+    /// not start -- Zeo has no thread for it -- unless a custom opener that never
+    /// takes `{session}` makes every session openable.
     pub openable: bool,
 }
 
