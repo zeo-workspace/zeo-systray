@@ -65,7 +65,7 @@ pub struct Session {
     /// Whether Zeo started this session, and so has a thread for it.
     pub zeo: bool,
     /// Whether a click on the row opens anything: a Zeo session, or any
-    /// session under a custom opener.
+    /// session under a custom opener that never takes `{session}`.
     pub openable: bool,
 }
 
