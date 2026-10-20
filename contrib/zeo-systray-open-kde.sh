@@ -74,8 +74,18 @@ raise_window() {
 		    // Switching desktop first is the part that matters: activating a
 		    // window the screen is not showing leaves the user looking at the
 		    // desktop they were already on.
+		    //
+		    // With "switch desktops independently for each screen" (KWin >= 6.8,
+		    // [Windows] PerOutputVirtualDesktops), assigning currentDesktop moves
+		    // every screen at once: the other monitor loses what it was showing.
+		    // Switching only the screen that holds the window keeps it. The
+		    // argument order is (desktop, output) -- the reverse is a type error.
 		    if (hit.desktops && hit.desktops.length > 0) {
-		        workspace.currentDesktop = hit.desktops[0];
+		        if (typeof workspace.setCurrentDesktopForScreen === "function" && hit.output) {
+		            workspace.setCurrentDesktopForScreen(hit.desktops[0], hit.output);
+		        } else {
+		            workspace.currentDesktop = hit.desktops[0];
+		        }
 		    }
 		    if (hit.minimized) {
 		        hit.minimized = false;

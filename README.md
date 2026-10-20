@@ -172,6 +172,14 @@ a subdirectory still finds its project's window — switches to that window's
 desktop, activates it, and only then hands the link over, through the same editor
 CLI (`ZEO_SYSTRAY_KDE_LINK_OPENER` names another program). It tries
 once more a second later, for a project Zed had to open a window for.
+
+With virtual desktops switched independently for each screen (Plasma 6.8,
+*Virtual Desktops → switch independently per screen*), only the screen holding
+the window changes desktop; the other monitor keeps what it was showing.
+
+Which monitor the *popup* appears on is Plasma's choice, not the tray's: the
+notification protocol has no way to name a screen, and Plasma shows popups on
+one screen only.
 KDE-only by nature, which is why it is a script beside the daemon and not code
 inside it.
 
