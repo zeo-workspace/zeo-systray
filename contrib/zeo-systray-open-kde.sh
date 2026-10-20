@@ -26,13 +26,23 @@ cwd="${2:-}"
 
 [[ -n "${session}" ]] || exit 0
 
-# The window caption is "<project> — <open file>", and the file half changes
-# whenever a tab does. Match on the project half only: it is the stable part.
-# The hook reports the directory the session runs in, which is the project
-# root or somewhere below it -- a session started in app-emulation/d7vk of a
-# project named bentoo -- so the candidates are that directory's name and then
-# each parent's, nearest first, stopping short of $HOME. The first candidate a
-# window matches wins, which keeps a nested project ahead of its parent.
+# Which window holds the thread is the editor's to say, not ours to guess. A
+# window can hold several projects and its caption names only the one in front,
+# and two windows can share a caption, so matching captions raised whichever
+# window came first. Handed the link, the editor asks the compositor to activate
+# the window that holds the thread. KWin grants that when the editor already
+# has focus, and otherwise refuses it and marks that same window as demanding
+# attention. Either way the window shows itself, so the KWin script waits for it
+# and brings the one the editor named.
+#
+# The caption is only the fallback, for an editor that asks for nothing. It is
+# "<project> — <open file>", and the file half changes whenever a tab does, so
+# only the project half is compared. The hook reports the directory the session
+# runs in, which is the project root or somewhere below it -- a session started
+# in app-emulation/d7vk of a project named bentoo -- so the candidates are that
+# directory's name and then each parent's, nearest first, stopping short of
+# $HOME. The nearest candidate any window matches decides, and it must match
+# exactly one window: with two, a guess is as likely to be wrong as right.
 candidates=()
 dir="${cwd%/}"
 while [[ -n "${dir}" && "${dir}" != "/" && "${dir}" != "${HOME%/}" ]]; do
@@ -40,37 +50,37 @@ while [[ -n "${dir}" && "${dir}" != "/" && "${dir}" != "${HOME%/}" ]]; do
 	dir="$(dirname -- "${dir}")"
 done
 
-raise_window() {
-	command -v busctl >/dev/null 2>&1 || return 0
-	((${#candidates[@]} > 0)) || return 0
+# How long the editor gets to name its window before the caption is tried, and
+# how long the script stays loaded after the link -- long enough for a window
+# the editor had to open for a project no window held.
+fallback_ms=3000
+watch_seconds=5
 
-	local tmp name
-	tmp="$(mktemp --suffix=.js)" || return 0
-	name="zeoSystrayRaise$$"
+watcher_name="zeoSystrayRaise$$"
+watcher_js=""
+
+start_watcher() {
+	command -v busctl >/dev/null 2>&1 || return 0
 
 	# Embedded as JSON so a directory name with quotes cannot break out of the
 	# script it is pasted into.
 	local json_candidates
-	json_candidates="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "${candidates[@]}" 2>/dev/null)" || {
-		rm -f "${tmp}"
-		return 0
-	}
+	json_candidates="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "${candidates[@]}" 2>/dev/null)" || return 0
 
-	cat >"${tmp}" <<-EOF
+	watcher_js="$(mktemp --suffix=.js)" || return 0
+
+	cat >"${watcher_js}" <<-EOF
 		var wanted = ${json_candidates};
-		var wins = workspace.windowList();
-		var hit = null;
-		for (var c = 0; c < wanted.length && !hit; c++) {
-		    for (var i = 0; i < wins.length; i++) {
-		        var cls = String(wins[i].resourceClass || "").toLowerCase();
-		        if (cls.indexOf("zed") === -1 && cls.indexOf("zeo") === -1) continue;
-		        if (String(wins[i].caption).split("—")[0].trim() === wanted[c]) {
-		            hit = wins[i];
-		            break;
-		        }
-		    }
+		var done = false;
+
+		function isEditor(w) {
+		    var cls = String(w.resourceClass || "").toLowerCase();
+		    return cls.indexOf("zed") !== -1 || cls.indexOf("zeo") !== -1;
 		}
-		if (hit) {
+
+		function bring(w) {
+		    if (done) return;
+		    done = true;
 		    // Switching desktop first is the part that matters: activating a
 		    // window the screen is not showing leaves the user looking at the
 		    // desktop they were already on.
@@ -80,33 +90,77 @@ raise_window() {
 		    // every screen at once: the other monitor loses what it was showing.
 		    // Switching only the screen that holds the window keeps it. The
 		    // argument order is (desktop, output) -- the reverse is a type error.
-		    if (hit.desktops && hit.desktops.length > 0) {
-		        if (typeof workspace.setCurrentDesktopForScreen === "function" && hit.output) {
-		            workspace.setCurrentDesktopForScreen(hit.desktops[0], hit.output);
+		    if (w.desktops && w.desktops.length > 0) {
+		        if (typeof workspace.setCurrentDesktopForScreen === "function" && w.output) {
+		            workspace.setCurrentDesktopForScreen(w.desktops[0], w.output);
 		        } else {
-		            workspace.currentDesktop = hit.desktops[0];
+		            workspace.currentDesktop = w.desktops[0];
 		        }
 		    }
-		    if (hit.minimized) {
-		        hit.minimized = false;
+		    if (w.minimized) {
+		        w.minimized = false;
 		    }
-		    workspace.activeWindow = hit;
+		    workspace.activeWindow = w;
 		}
+
+		// Granted: KWin activated the window itself.
+		workspace.windowActivated.connect(function (w) {
+		    if (w && isEditor(w)) bring(w);
+		});
+		// Refused: the same window, marked as demanding attention.
+		var wins = workspace.windowList();
+		for (var i = 0; i < wins.length; i++) {
+		    if (!isEditor(wins[i])) continue;
+		    (function (w) {
+		        w.demandsAttentionChanged.connect(function () {
+		            if (w.demandsAttention) bring(w);
+		        });
+		    })(wins[i]);
+		}
+		// No window held the project, so the editor opened one.
+		workspace.windowAdded.connect(function (w) {
+		    if (isEditor(w)) bring(w);
+		});
+
+		var fallback = new QTimer();
+		fallback.singleShot = true;
+		fallback.timeout.connect(function () {
+		    if (done) return;
+		    // An editor window in front already is the one the user is in, or
+		    // the one the editor picked without a signal reaching us.
+		    var active = workspace.activeWindow;
+		    if (active && isEditor(active)) return;
+		    var all = workspace.windowList();
+		    for (var c = 0; c < wanted.length; c++) {
+		        var hits = [];
+		        for (var j = 0; j < all.length; j++) {
+		            if (!isEditor(all[j])) continue;
+		            if (String(all[j].caption).split("—")[0].trim() === wanted[c]) hits.push(all[j]);
+		        }
+		        if (hits.length === 1) bring(hits[0]);
+		        if (hits.length > 0) return;
+		    }
+		});
+		fallback.start(${fallback_ms});
 	EOF
 
 	busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting \
-		loadScript ss "${tmp}" "${name}" >/dev/null 2>&1
+		loadScript ss "${watcher_js}" "${watcher_name}" >/dev/null 2>&1
 	busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting \
 		start >/dev/null 2>&1
-	busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting \
-		unloadScript s "${name}" >/dev/null 2>&1
-	rm -f "${tmp}"
+	# KWin reads the file on a worker thread. The editor must not answer the
+	# link before the script is listening, or its window goes unseen.
+	sleep 0.5
 }
 
-# Raise first, then hand over the link. The other order works too, but this way
-# the window is already in front when the thread switches, so the switch is
-# something the user sees happen rather than something they find afterwards.
-raise_window
+stop_watcher() {
+	[[ -n "${watcher_js}" ]] || return 0
+	busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting \
+		unloadScript s "${watcher_name}" >/dev/null 2>&1
+	rm -f "${watcher_js}"
+}
+
+start_watcher
 
 # The directory rides in a URL query, so it is percent-encoded: a bare `&`
 # would end the parameter and a `+` would decode as a space.
@@ -136,10 +190,7 @@ if [[ -z "${opener}" ]]; then
 fi
 "${opener}" "${link}" >/dev/null 2>&1
 
-# Once more after the link: when no window held the project, Zed opens one for
-# it, and that window did not exist for the first attempt to find. Raising a
-# window that is already in front changes nothing, so the repeat is harmless.
-sleep 1
-raise_window
+sleep "${watch_seconds}"
+stop_watcher
 
 exit 0
