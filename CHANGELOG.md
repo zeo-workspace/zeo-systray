@@ -14,7 +14,7 @@ The tray is fed by Claude Code hooks and, optionally, by Zeo itself over
 `$XDG_RUNTIME_DIR/zeo-systray.sock`. Zeo's side of that channel is patch 0038
 in `zed-patches`, and it needs this daemon at 0.3.0 or later.
 
-## [Unreleased]
+## [0.4.0] — 2026-10-20
 
 ### Added
 
@@ -34,6 +34,15 @@ in `zed-patches`, and it needs this daemon at 0.3.0 or later.
   session still notifies, with a disabled row and no button. A custom
   `ZEO_SYSTRAY_OPEN_CMD` that never uses `{session}` (e.g. `xdg-open {cwd}`)
   keeps every row clickable (story 050).
+
+### Fixed
+
+- The KDE raise script switches only the screen that holds the window when
+  Plasma runs with virtual desktops switched independently per screen (KWin
+  6.8, `[Windows] PerOutputVirtualDesktops`). It assigned the global current
+  desktop, which moved every monitor to the window's desktop and took the
+  other monitor away from what it was showing. Without that mode nothing
+  changes.
 
 ## [0.3.0] — 2026-10-04
 
