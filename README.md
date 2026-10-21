@@ -166,22 +166,32 @@ switch virtual desktop and raise the window is KWin itself, and
 ZEO_SYSTRAY_OPEN_CMD='/usr/share/zeo-systray/zeo-systray-open-kde.sh {session} {cwd}'
 ```
 
-It matches the window by the project half of its caption against the name of
-the session's working directory and then of each parent — a session running in
-a subdirectory still finds its project's window — switches to that window's
-desktop, activates it, and only then hands the link over, through the same editor
-CLI (`ZEO_SYSTRAY_KDE_LINK_OPENER` names another program). It tries
-once more a second later, for a project Zed had to open a window for.
+It hands the link over through the same editor CLI
+(`ZEO_SYSTRAY_KDE_LINK_OPENER` names another program) and lets the editor say
+which window holds the thread. No caption can: a window holds several projects
+and names only the one in front, and two windows can share a name. Handed the
+link, Zed asks KWin to activate the window holding the thread — refused, as
+above, which marks that window as demanding attention — and the script switches
+to that window's desktop and activates it. A window Zed opens for a project no
+window held is brought the same way.
+
+Only when the editor asks for nothing within three seconds does the script fall
+back to the caption: its project half against the name of the session's working
+directory and then of each parent — a session running in a subdirectory still
+finds its project's window — and only when exactly one window matches. With two,
+it leaves the screen alone rather than guess.
 
 With virtual desktops switched independently for each screen (Plasma 6.8,
 *Virtual Desktops → switch independently per screen*), only the screen holding
 the window changes desktop; the other monitor keeps what it was showing.
 
-Which monitor the *popup* appears on is Plasma's choice, not the tray's: the
-notification protocol has no way to name a screen, and Plasma shows popups on
-one screen only.
 KDE-only by nature, which is why it is a script beside the daemon and not code
 inside it.
+
+Which monitor the *popup* appears on is Plasma's choice, not the tray's: the
+notification protocol has no way to name a screen — Plasma ignores its `x`/`y`
+position hints — and Plasma shows popups on one screen only, the primary one's
+when several panels hold a system tray.
 
 ## Plan usage limits
 

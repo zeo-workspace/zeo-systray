@@ -14,6 +14,19 @@ The tray is fed by Claude Code hooks and, optionally, by Zeo itself over
 `$XDG_RUNTIME_DIR/zeo-systray.sock`. Zeo's side of that channel is patch 0038
 in `zed-patches`, and it needs this daemon at 0.3.0 or later.
 
+## [Unreleased]
+
+### Fixed
+
+- **Open thread** under the KDE raise script brings the window that holds the
+  thread. The script matched windows by caption and raised the first match,
+  but a Zeo window holds several projects and names only the one in front, and
+  two windows can share a name, so it switched to another window's desktop. It
+  now hands the link over first and brings the window the editor asks KWin to
+  activate, which KWin either grants or refuses and marks as demanding
+  attention. The caption is only a fallback, used when exactly one window
+  matches.
+
 ## [0.4.0] — 2026-10-20
 
 ### Added
