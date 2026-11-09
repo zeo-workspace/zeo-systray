@@ -16,6 +16,8 @@ in `zed-patches`, and it needs this daemon at 0.3.0 or later.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-09
+
 ### Changed
 
 - **Only a popup that waits for you keeps "Open thread"** (Zeo next proposal §5.4, decided in
