@@ -268,6 +268,7 @@ impl TrayState {
                     session_id: String::new(),
                     cwd: String::new(),
                     openable: false,
+                    open_button: false,
                 }
             })
             .collect();
@@ -312,6 +313,8 @@ impl TrayState {
             cwd: task.cwd,
             // Zeo sends task outcomes itself, so the thread is always its own.
             openable: true,
+            // An outcome: the history row opens it, the popup does not (§5.4).
+            open_button: false,
         };
         self.record(&notification);
         // Same rule as `apply`: muting silences the popup, never the record.
@@ -443,10 +446,16 @@ pub struct Notification {
     /// account, not a session.
     pub session_id: String,
     pub cwd: String,
-    /// Whether the popup offers to open the session. False for a session Zeo did
-    /// not start -- Zeo has no thread for it -- unless a custom opener that never
-    /// takes `{session}` makes every session openable.
+    /// Whether the session can be opened: the history row is clickable. False for
+    /// a session Zeo did not start -- Zeo has no thread for it -- unless a custom
+    /// opener that never takes `{session}` makes every session openable.
     pub openable: bool,
+    /// Whether the popup itself carries "Open thread". Only a popup that waits for
+    /// an action does -- a permission request or a question. An outcome (a task
+    /// that ended, a turn that finished or failed) is news, and its button pulled
+    /// the operator away from whatever they were doing (Zeo next proposal §5.4,
+    /// decided in §12-8); its history row still opens the thread.
+    pub open_button: bool,
 }
 
 /// Decides whether a transition deserves a desktop notification.
@@ -475,6 +484,11 @@ fn notification_for(
             format!(" {OUTSIDE_ZEO_SUFFIX}"),
         ),
     };
+    // Only a popup that waits for the operator keeps "Open thread" (§5.4).
+    let waits_for_action = matches!(
+        event.kind,
+        EventKind::PermissionRequest | EventKind::Notification
+    );
     let build = |summary: String, body: &str, history: &str, critical: bool| {
         Some(Notification {
             summary,
@@ -486,6 +500,7 @@ fn notification_for(
             session_id: event.session_id.clone(),
             cwd: event.cwd.clone(),
             openable,
+            open_button: openable && waits_for_action,
         })
     };
 

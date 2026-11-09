@@ -178,7 +178,11 @@ fn a_zeo_session_is_openable_everywhere() {
     let notification = state
         .apply(claimed(EventKind::Stop, "z", Some("zeo")))
         .expect("Stop notifies");
-    assert!(notification.openable, "the popup offers Open");
+    assert!(notification.openable, "the session can be opened");
+    assert!(
+        !notification.open_button,
+        "a finished turn is news: no button on its popup (§5.4)"
+    );
     assert!(state.history()[0].openable, "the history row opens it");
     assert!(
         state.sessions().all(|session| session.openable),
@@ -193,6 +197,7 @@ fn a_session_nobody_claimed_still_notifies_but_cannot_be_opened() {
         .apply(claimed(EventKind::Stop, "cli", None))
         .expect("an unclaimed session still notifies");
     assert!(!notification.openable, "no Open on the popup");
+    assert!(!notification.open_button);
     assert!(!state.history()[0].openable, "the history row is disabled");
     assert!(
         state.sessions().all(|session| !session.openable),
@@ -226,6 +231,7 @@ fn a_task_outcome_is_zeos_by_construction() {
         .apply_task(task_outcome("failed", "s1", "t1", None))
         .expect("a task outcome notifies");
     assert!(notification.openable);
+    assert!(!notification.open_button, "an outcome's popup has no button (§5.4)");
     assert!(state.history()[0].openable);
 }
 
@@ -333,4 +339,38 @@ fn a_custom_opener_still_says_outside_zeo_but_not_that_nothing_opens() {
         "body was {:?}",
         notification.body
     );
+}
+
+// ---- Zeo next proposal §5.4: only a popup that waits for an action keeps "Open thread"
+
+#[test]
+fn permission_and_question_popups_keep_the_button() {
+    for kind in [EventKind::PermissionRequest, EventKind::Notification] {
+        let mut state = TrayState::default();
+        let notification = state
+            .apply(claimed(kind, "z", Some("zeo")))
+            .expect("it notifies");
+        assert!(notification.open_button, "{kind:?} waits for the operator");
+    }
+}
+
+#[test]
+fn outcome_popups_lose_the_button_and_keep_the_history_row() {
+    for kind in [EventKind::Stop, EventKind::StopFailure] {
+        let mut state = TrayState::default();
+        let notification = state
+            .apply(claimed(kind, "z", Some("zeo")))
+            .expect("it notifies");
+        assert!(!notification.open_button, "{kind:?} is an outcome");
+        assert!(state.history()[0].openable, "{kind:?}'s history row still opens it");
+    }
+}
+
+#[test]
+fn an_unopenable_session_never_gets_the_button() {
+    let mut state = TrayState::default();
+    let notification = state
+        .apply(claimed(EventKind::PermissionRequest, "cli", None))
+        .expect("it notifies");
+    assert!(!notification.open_button, "no thread to open");
 }

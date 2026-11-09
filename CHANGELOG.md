@@ -16,6 +16,15 @@ in `zed-patches`, and it needs this daemon at 0.3.0 or later.
 
 ## [Unreleased]
 
+### Changed
+
+- **Only a popup that waits for you keeps "Open thread"** (Zeo next proposal §5.4, decided in
+  §12-8). A task outcome from Zeo and a session's "done", "turn finished" and "failed" popups
+  are news, and their button pulled you away from whatever you were doing; they now carry no
+  button. Their history rows still open the thread. Permission and question popups keep the
+  button, because the agent is waiting on them. Internally, `Notification` splits
+  `openable` (the history row) from `open_button` (the popup).
+
 ### Fixed
 
 - **Open thread** under the KDE raise script brings the window that holds the
